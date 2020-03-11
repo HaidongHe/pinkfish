@@ -12,7 +12,7 @@ from __future__ import absolute_import
 
 # Other imports
 import pandas as pd
-import ConfigParser
+from configparser import ConfigParser
 import os
 
 def print_full(x):
@@ -22,9 +22,8 @@ def print_full(x):
 
 def read_config():
     ''' Read configuration '''
-
     conf = {}
-    parser = ConfigParser.ConfigParser()
+    parser = ConfigParser()
     parser.read(os.path.expanduser('~/.pinkfish'))
     conf['base_dir'] = parser.get('global', 'base_dir')
     return conf

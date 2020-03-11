@@ -1,122 +1,100 @@
 """
 stategy
 ---------
-stategy template
 """
 
-# Use future imports for python 3.0 forward compatibility
+# use future imports for python 3.x forward compatibility
 from __future__ import print_function
 from __future__ import unicode_literals
 from __future__ import division
 from __future__ import absolute_import
 
-# Other imports
+# other imports
 import pandas as pd
-import numpy as np
-import matplotlib
 import matplotlib.pyplot as plt
 import datetime
 from talib.abstract import *
+
+# project imports
 import pinkfish as pf
 
-class Strategy():
-    """ strategy """
+pf.DEBUG = False
 
-    def __init__(self, symbol, capital, start, end, sma_period=200, percent_band=0,
-                 slippage_per_trade=0, commissions_per_trade=0):
+class Strategy():
+
+    def __init__(self, symbol, capital, start, end, use_adj=False,
+                 sma_period=200, percent_band=0):
         self._symbol = symbol
         self._capital = capital
         self._start = start
         self._end = end
+        self._use_adj = use_adj
         self._sma_period = sma_period
         self._percent_band = percent_band/100
-        self._slippage_per_trade = slippage_per_trade
-        self._commissions_per_trade = commissions_per_trade
 
     def _algo(self):
         """ Algo:
             1. The SPY closes above its upper band, buy
             2. If the SPY closes below its lower band, sell your long position.
         """
+        self._tlog.cash = self._capital
 
-        cash = self._capital
-        shares = 0
-        start_flag = True
-        end_flag = False
-        stop_loss = 0
+        for i, row in enumerate(self._ts.itertuples()):
 
-        for i in range(len(self._ts.index)):
-
-            date = self._ts.index[i]
-            high = self._ts['high'][i]
-            low = self._ts['low'][i]
-            close = self._ts['close'][i]
-            sma = self._ts['sma'][i]
+            date = row.Index.to_pydatetime()
+            high = row.high
+            low = row.low
+            close = row.close
+            sma = row.sma
+            sma200 = row.sma200
             upper_band = sma + sma * self._percent_band
             lower_band = sma - sma * self._percent_band
-            end_flag = True if (i == len(self._ts.index) - 1) else False
-
-            if pd.isnull(sma) or self._ts.index[i] < self._start:
-                continue
-            elif start_flag:
-                start_flag = False
-                # set start and end
-                self._start = self._ts.index[i]
-                self._end = self._ts.index[-1]
+            upper_band200 = sma200 + sma200 * self._percent_band
+            lower_band200 = sma200 - sma200 * self._percent_band
+            end_flag = True if (i == len(self._ts) - 1) else False
+            shares = 0
 
             # buy
-            if self._tlog.num_open_trades() == 0:
-                if close > upper_band and not end_flag:
+            if (self._tlog.num_open_trades() == 0
+                and ((close < upper_band200 and close > upper_band) or (close > upper_band200))
+                and not end_flag):
 
-                    # calculate shares to buy and remaining cash
-                    shares, cash = self._tlog.calc_shares(cash, close)
-
-                    # enter buy in trade log
-                    self._tlog.enter_trade(date, close, shares)
-                    #print("{0} BUY  {1} {2} @ {3:.2f}".format(date, shares, self._symbol, close))
-
-                    # record daily balance
-                    self._dbal.append(date, high, low, close, shares, cash, pf.TradeState.OPEN)
-            
-                    # set stop loss
-                    stop_loss = 0*close
-                else:
-                    # hold
-                    self._dbal.append(date, high, low, close, shares, cash, pf.TradeState.HOLD)
+                # enter buy in trade log
+                shares = self._tlog.enter_trade(date, close)
 
             # sell
-            elif close < lower_band or \
-                (low < stop_loss) or \
-                end_flag:
+            elif (self._tlog.num_open_trades() > 0
+                  and (close < lower_band200 and close < lower_band)
+                  or end_flag):
 
                 # enter sell in trade log
-                idx = self._tlog.exit_trade(date, close)
-                shares = self._tlog.get_log()['qty'][idx]
-                #print("{0} SELL {1} {2} @ {3:.2f}".format(date, shares, self._symbol, close))
-                #if (close < stop_loss):
-                #    print("--------------------STOP-----------------------------")
+                shares = self._tlog.exit_trade(date, close)
 
-                # record daily balance
-                self._dbal.append(date, high, low, close, shares, cash, pf.TradeState.CLOSE)   
-            
-                # update cash
-                cash = self._tlog.calc_cash(cash, close, shares)
-            
-                # update shares
-                shares = 0
+            if shares > 0:
+                pf.DBG("{0} BUY  {1} {2} @ {3:.2f}".format(
+                       date, shares, self._symbol, close))
+            elif shares < 0:
+                pf.DBG("{0} SELL {1} {2} @ {3:.2f}".format(
+                       date, -shares, self._symbol, close))
 
-            # hold
-            else:
-                self._dbal.append(date, high, low, close, shares, cash, pf.TradeState.HOLD)   
+            # record daily balance
+            self._dbal.append(date, high, low, close,
+                              self._tlog.shares, self._tlog.cash)
 
     def run(self):
         self._ts = pf.fetch_timeseries(self._symbol)
         self._ts = pf.select_tradeperiod(self._ts, self._start,
-                                         self._end, use_adj=False)
+                                         self._end, self._use_adj)       
 
         # Add technical indicator:  day sma
         sma = SMA(self._ts, timeperiod=self._sma_period)
-        self._ts['sma'] = sma          
+        self._ts['sma'] = sma
+        
+        # Add technical indicator:  day sma
+        sma200 = SMA(self._ts, timeperiod=200)
+        self._ts['sma200'] = sma200
+        
+        self._ts, self._start = pf.finalize_timeseries(self._ts, self._start)
 
         self._tlog = pf.TradeLog()
         self._dbal = pf.DailyBal()
@@ -125,17 +103,14 @@ class Strategy():
 
     def get_logs(self):
         """ return DataFrames """
-        tlog = self._tlog.get_log()
-        dbal = self._dbal.get_log()
-        return tlog, dbal
+        self.rlog = self._tlog.get_log_raw()
+        self.tlog = self._tlog.get_log()
+        self.dbal = self._dbal.get_log(self.tlog)
+        return self.rlog, self.tlog, self.dbal
 
-    def stats(self):
-        tlog, dbal = self.get_logs()
-        
-        stats = pf.stats(self._ts, tlog, dbal,
-                         self._start, self._end, self._capital)
+    def get_stats(self):
+        stats = pf.stats(self._ts, self.tlog, self.dbal, self._capital)
         return stats
-
 
 def summary(strategies, *metrics):
     """ Stores stats summary in a DataFrame.
@@ -160,5 +135,3 @@ def plot_bar_graph(df, metric):
     axes = fig.add_subplot(111, ylabel=metric)
     df.plot(kind='bar', ax=axes, legend=False)
     axes.set_xticklabels(df.index, rotation=0)
-        
-

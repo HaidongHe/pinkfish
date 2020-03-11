@@ -13,113 +13,267 @@ from __future__ import absolute_import
 # Other imports
 import pandas as pd
 
-class TradeLog():
-    """ trade log """
+class TradeLog(object):
 
     def __init__(self):
-        columns = ['entry_date', 'entry_price', 'long_short', 'qty',
-                   'exit_date', 'exit_price', 'pl_points', 'pl_cash',
-                   'cumul_total']
-        self._tlog = pd.DataFrame(columns=columns)
-        self.shares = 0
+        self._l = []             # list of trade entry/exit tuples
+        self._raw = []           # list raw trade tuples
+        self._open_trades = []   # list of open trades
+        self._cash = 10000       # current cash
+        self._shares = 0         # current shares
+        self._cumul_total = 0    # cumul total profits (loss)
 
-    def calc_shares(self, cash, price):
-        """ calculate shares and remaining cash before entry """
+    def calc_shares(self, price, cash=None):
+        """ calculate shares and remaining cash before enter_trade() """
+        if cash is None or cash > self._cash:
+            cash = self._cash
         shares = int(cash / price)
-        cash = cash - shares*price
-        return shares, cash
+        return shares
 
-    def calc_cash(self, cash, price, shares):
-        """ calculate cash after exit """
-        cash = cash + price*shares
-        return cash
+    def enter_trade(self, entry_date, entry_price, shares=None, symbol=''):
+        """ add entry to open_trades list; update shares and cash """
+        if shares == 0:
+            return 0
 
-    def enter_trade(self, entry_date, entry_price, shares, long_short='long'):
-        """ record trade entry in trade log """
-        d = {'entry_date':entry_date, 'entry_price':entry_price, 'qty':shares, 
-             'long_short':long_short}
-        tmp = pd.DataFrame([d], columns=self._tlog.columns)
-        self._tlog = self._tlog.append(tmp, ignore_index=True)
+        max_shares = self.calc_shares(entry_price)
+        shares = max_shares if shares is None else min(shares, max_shares)
 
-        # update shares
-        if long_short == 'long':
-            self.shares += shares
-        else:
-            self.shares -=shares
+        # date, price, shares, entry_exit
+        # record in raw trade log
+        t = (entry_date, entry_price, shares, 'entry', symbol)
+        self._raw.append(t)
 
-    def _get_open_trades(self):
-        """ find the "integer" index of rows with NaN """
-        return pd.isnull(self._tlog).any(1).nonzero()[0]
-    
+        # add record to open_trades
+        d = {'entry_date':entry_date, 'entry_price':entry_price, 'qty':shares,
+             'symbol':symbol}
+        self._open_trades.append(d)
+
+        # update shares and cash
+        self._shares += shares
+        self._cash -= entry_price * shares
+        return shares
+
     def num_open_trades(self):
         """ return number of open orders, i.e. not closed out """
-        return len(self._get_open_trades())
+        return len(self._open_trades)
 
-    def exit_trade(self, exit_date, exit_price, shares=-1, long_short='long'):
-        """ record trade exit in trade log """
+    def _qty_open_trade(self, index):
+        """ qty of an open trade by index """
+        if index >= self.num_open_trades(): return 0
+        return self._open_trades[index]['qty']
 
-        rows = self._get_open_trades()
-        idx = rows[0]
+    @property
+    def cash(self):
+        """ return amount of cash """
+        return self._cash
 
-        entry_price = self._tlog['entry_price'][idx]
-        shares = self._tlog['qty'][idx] if shares == -1 else shares
-        pl_points = exit_price - entry_price
-        pl_cash = pl_points * shares
-        if idx == 0:
-            cumul_total = pl_cash
+    @cash.setter
+    def cash(self, value):
+        self._cash = value
+
+    @property
+    def shares(self):
+        """ return number of shares """
+        return self._shares
+
+    def value(self, price):
+        """ return total value of shares """
+        return self._shares * price
+
+    def percent(self, price):
+        """ return percent of portfolio value currently allocated """
+        total_equity = self._cash + self._shares * price
+        return ((self._shares * price) / total_equity) * 100
+
+    def exit_trade(self, exit_date, exit_price, shares=None, symbol=''):
+        """
+        record exit in trade log; return -shares exited
+        shares = None exits all shares
+        shares > 0 exits that number of shares
+        shares < 0 indicates the number of positons to exit
+        """
+
+        if shares is None or shares > self._shares:
+            shares = self._shares
+        elif shares < 0:
+            positions = -shares
+            shares = 0
+            for position in range(positions):
+                shares += self._qty_open_trade(position)
+
+        if shares == 0:
+            return 0
+
+        shares_orig = shares
+
+        # record in raw trade log
+        # date, price, shares, entry_exit
+        t = (exit_date, exit_price, shares, 'exit', symbol)
+        self._raw.append(t)
+
+        for i, open_trade in enumerate(self._open_trades[:]):
+            entry_date = open_trade['entry_date']
+            entry_price = open_trade['entry_price']
+            qty = open_trade['qty']
+            pl_points = exit_price - entry_price
+
+            # calculate exit_shares
+            exit_shares = qty if shares >= qty else shares
+            pl_cash = pl_points * exit_shares
+            self._cumul_total += pl_cash
+
+            # record in trade log
+            t = (entry_date, entry_price, exit_date, exit_price,
+                 pl_points, pl_cash, exit_shares, self._cumul_total, symbol)
+            self._l.append(t)
+
+            # update shares and cash
+            self._shares -= exit_shares
+            self._cash += exit_price * exit_shares
+
+            #print('i = {}, shares = {}, exit_shares = {}, qty = {}, symbol = {}'
+            #      .format(i, shares, exit_shares, qty, symbol))
+
+            # update open_trades list
+            if shares == qty:
+                del self._open_trades[0];
+                break
+            elif shares < qty:
+                self._open_trades[0]['qty'] -= shares
+                break
+            else:
+                del self._open_trades[0]
+                shares -= exit_shares
+
+        return -shares_orig
+
+    def adjust_shares(self, date, price, shares):
+        """
+        Adjust a position to a target number of shares.
+        If the position doesn't already exist, this is equivalent
+        to entering a new trade. If the position does exist, this is
+        equivalent to entering or exiting a trade for the difference between
+        the target number of shares and the current number of shares.
+        """
+        diff = shares - self._shares
+        if diff >= 0:
+            shares = self.enter_trade(date, price, shares=diff)
         else:
-            cumul_total = self._tlog.ix[idx - 1, 'cumul_total'] + pl_cash
+            shares = self.exit_trade(date, price, shares=-diff)
+        return shares
 
-        self._tlog.ix[idx, 'exit_date'] = exit_date
-        self._tlog.ix[idx, 'exit_price'] = exit_price
-        self._tlog.ix[idx, 'long_short'] = 'long'
-        self._tlog.ix[idx, 'pl_points'] = pl_points
-        self._tlog.ix[idx, 'pl_cash'] = pl_cash
-        self._tlog.ix[idx, 'cumul_total'] = cumul_total
+    def adjust_value(self, date, price, value):
+        """
+        Adjust a position to a target value.
+        If the position doesn't already exist, this is equivalent
+        to entering a new trade. If the position does exist, this is
+        equivalent to entering or exiting a trade for the difference between
+        the target value and the current value.
+        """
+        total_equity = self._cash + self._shares * price
+        shares = int(min(total_equity, value) / price)
+        shares = self.adjust_shares(date, price, shares)
+        return shares
 
-        # update shares
-        if long_short == 'long':
-            self.shares -= shares
-        else:
-            self.shares +=shares
-        return idx
+    def adjust_percent(self, date, price, percent):
+        """
+        Adjust a position to a target percent of the current portfolio value.
+        If the position doesn't already exist, this is equivalent
+        to entering a new trade. If the position does exist, this is
+        equivalent to entering or exiting a trade for the difference between
+        the target percent and the current percent.
+        """
+        percent = percent if percent <= 1 else percent/100
+        total_equity = self._cash + self._shares * price
+        value = total_equity * percent
+        shares = self.adjust_value(date, price, value)
+        return shares
 
-    def get_log(self):
+    def _merge_trades(self, tlog):
+        """ merge like trades that occur on the same day """
+
+        # merge exit trades that occur on the same date
+        def _merge_exits(tlog):
+            # tlog is a DataFrame of group values
+            tlog['entry_date'] = tlog['entry_date'].head(1)
+            tlog['entry_price'] = \
+                (tlog['entry_price'] * tlog['qty']).sum() / tlog['qty'].sum()
+            tlog['exit_price'] = \
+                (tlog['exit_price'] * tlog['qty']).sum() / tlog['qty'].sum()
+            tlog['pl_points'] = tlog['pl_points'].sum()
+            tlog['pl_cash'] = tlog['pl_cash'].sum()
+            tlog['qty'] = tlog['qty'].sum()
+            tlog['cumul_total'] = tlog['cumul_total'].sum()
+            return tlog
+
+        # merge entry trades that occur on the same date
+        def _merge_entrys(tlog):
+            # tlog is a DataFrame of group values
+            tlog['entry_price'] = \
+                (tlog['entry_price'] * tlog['qty']).sum() / tlog['qty'].sum()
+            tlog['exit_date'] = tlog['exit_date'].tail(1)
+            tlog['exit_price'] = \
+                (tlog['exit_price'] * tlog['qty']).sum() / tlog['qty'].sum()
+            tlog['pl_points'] = tlog['pl_points'].sum()
+            tlog['pl_cash'] = tlog['pl_cash'].sum()
+            tlog['qty'] = tlog['qty'].sum()
+            tlog['cumul_total'] = tlog['cumul_total'].sum()
+            return tlog
+
+        tlog = tlog.groupby('entry_date').apply(_merge_entrys).dropna().reset_index(drop=True)
+        tlog = tlog.groupby('exit_date').apply(_merge_exits).dropna().reset_index(drop=True)
+        return tlog
+
+
+    def get_log(self, merge_trades=False):
         """ return Dataframe """
-        return self._tlog
+        columns = ['entry_date', 'entry_price', 'exit_date', 'exit_price',
+                   'pl_points', 'pl_cash', 'qty', 'cumul_total', 'symbol']
+        tlog = pd.DataFrame(self._l, columns=columns)
+
+        if merge_trades:
+            tlog = self._merge_trades(tlog)
+
+        return tlog
+
+    def get_log_raw(self):
+        """ return Dataframe """
+        columns = ['date', 'price', 'shares', 'entry_exit', 'symbol']
+        rlog = pd.DataFrame(self._raw, columns=columns)
+        return rlog
 
 class TradeState:
-    OPEN, HOLD, CLOSE = range(0, 3)
+    OPEN, HOLD, CLOSE = ['O', '-', 'X']
 
-class DailyBal:
+class DailyBal(object):
     """ Log for daily balance """
 
     def __init__(self):
         self._l = []  # list of daily balance tuples
 
-    def _balance(self, date, high, low, close, shares, cash, state):
-        """ calculates daily balance values """
-        if state == TradeState.OPEN:
-            # date, high, low, close, cash, state
-            t = (date, close*shares + cash, close*shares + cash,
-                 close*shares + cash, shares, cash, state)
-        elif state == TradeState.HOLD:
-            t = (date, high*shares + cash, low*shares + cash,
-                 close*shares + cash, shares, cash, state)
-        elif state == TradeState.CLOSE:
-            t = (date, high*shares + cash, low*shares + cash,
-                 close*shares + cash, shares, cash, state)
-
-        return t
-
-    def append(self, date, high, low, close, shares, cash, state):
-        t = self._balance(date, high, low, close, shares, cash, state)
+    def append(self, date, high, low, close, shares, cash):
+        # calculate daily balance values: date, high, low, close, shares, cash
+        t = (date, high*shares + cash, low*shares + cash,
+                   close*shares + cash, shares, cash)
         self._l.append(t)
 
-    def get_log(self):
+    def get_log(self, tlog):
         """ return Dataframe """
-        columns = ['date', 'high', 'low', 'close', 'shares', 'cash', 'state']
+        columns = ['date', 'high', 'low', 'close', 'shares', 'cash']
         dbal = pd.DataFrame(self._l, columns=columns)
+
+        def trade_state(row):
+            # convert pandas.timestamp to numpy.datetime64
+            # see if there was a entry or exit in tlog on date
+            date = row.date.to_datetime64()
+            if date in tlog.entry_date.values:
+                state = TradeState.OPEN
+            elif date in tlog.exit_date.values:
+                state = TradeState.CLOSE
+            else:
+                state = TradeState.HOLD
+            return state
+
+        dbal['state'] = dbal.apply(trade_state, axis=1)
         dbal.set_index('date', inplace=True)
         return dbal
-
