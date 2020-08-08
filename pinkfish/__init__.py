@@ -7,19 +7,47 @@ from .fetch import (
 )
 
 from .trade import (
+    Direction,
+    Margin,
     TradeLog,
     TradeState,
     DailyBal
 )
 
 from .statistics import (
+    SP500_BEGIN,
+    TRADING_DAYS_PER_YEAR,
+    TRADING_DAYS_PER_MONTH,
+    TRADING_DAYS_PER_WEEK,
     stats,
     currency,
     summary,
-    summary2,
-    summary3,
-    summary4,
-    summary5
+    default_metrics,
+    currency_metrics
+)
+
+from .plot import (
+    plot_equity_curve,
+    plot_equity_curves,
+    plot_trades,
+    plot_bar_graph
+)
+
+from .benchmark import (
+    Benchmark
+)
+
+from .portfolio import (
+    Portfolio
+)
+
+from .indicator import (
+    CROSSOVER,
+    MOMENTUM
+)
+
+from .calendar import (
+    calendar
 )
 
 from .evolved import (
@@ -28,27 +56,10 @@ from .evolved import (
     prettier_graphs
 )
 
-from .benchmark import (
-    Benchmark
-)
-
-from .calendar import (
-    calendar
-)
-
-from .plot import (
-    plot_equity_curve,
-    plot_trades,
-    plot_bar_graph
-)
-
-from .indicator import (
-    CROSSOVER
-)
-
 from .utility import (
     print_full,
-    read_config
+    read_config,
+    is_last_row
 )
 
 DEBUG = False
@@ -56,5 +67,4 @@ def DBG(s):
     if DEBUG: print(s)
     else:     pass
 
-SP500_BEGIN = '1957-03-04'
 

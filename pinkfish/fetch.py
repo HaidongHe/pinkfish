@@ -4,13 +4,6 @@ fetch
 Retrive time series data
 """
 
-# Use future imports for python 3.0 forward compatibility
-from __future__ import print_function
-from __future__ import unicode_literals
-from __future__ import division
-from __future__ import absolute_import
-
-# Other imports
 import sys
 import pandas as pd
 import pandas_datareader.data as pdr
@@ -19,6 +12,9 @@ import datetime
 import os
 import pinkfish as pf
 
+
+#####################################################################
+# TIMESERIES (fetch, select, finalize)
 
 def _get_cache_dir(dir_name):
     """ returns the path to the cache_dir """
@@ -55,6 +51,11 @@ def fetch_timeseries(symbol, dir_name='data', use_cache=True, from_year=None):
     # yahoo finance uses '-' where '.' is used in symbol names
     symbol = symbol.replace('.', '-')
     symbol = symbol.upper()
+
+    # pinkfish allows the use of a suffix starting with a '_',
+    # like SPY_SHRT, so extract the symbol
+    symbol = symbol.split('_')[0]
+
     timeseries_cache = os.path.join(_get_cache_dir(dir_name), symbol + '.csv')
 
     if os.path.isfile(timeseries_cache) and use_cache:
@@ -75,10 +76,10 @@ def _adj_prices(ts):
     ts['close'] = ts['close'] * ts['adj_close'] / ts['close']
     return ts
 
-def select_tradeperiod(ts, start, end, use_adj=False, pad=True):
+def select_tradeperiod(ts, start, end, use_adj=False):
     """
-    Select a time slice of the data to trade from ts.  If pad=True,
-    back date a year to allow time for long term indicators,
+    Select a time slice of the data to trade from ts.
+    Back date a year to allow time for long term indicators,
     e.g. 200sma is become valid
     """
     if use_adj:
@@ -86,10 +87,7 @@ def select_tradeperiod(ts, start, end, use_adj=False, pad=True):
 
     if start < ts.index[0]: start = ts.index[0]
     if end > ts.index[-1]: end = ts.index[-1]
-    if pad:
-        ts = ts[start - datetime.timedelta(365):end]
-    else:
-        ts = ts[start:end]
+    ts = ts[start - datetime.timedelta(365):end]
 
     return ts
 
@@ -101,6 +99,9 @@ def finalize_timeseries(ts, start):
     ts = ts[start:]
     start = ts.index[0]
     return ts, start
+
+#####################################################################
+# CACHE SYMBOLS (remove, update)
 
 def remove_cache_symbols(symbols=None, dir_name='data'):
     """

@@ -1,17 +1,14 @@
 pinkfish
 ======
 
-**02-16-2020: Download latest time series for every S&P 500 component (see sp500-components-timeseries example)**   
-**02-16-2020: Update your entire ticker symbol cache to latest time series (see update-cache-symbols example)**   
-**01-31-2020: Add basic multi symbol support (see trade-two-symbols example)**  
-**12-27-2019: Integration with Quantopian's pyfolio and empyrical libraries (see pyfolio-empyrical example)**  
-**12-24-2019: Use trade_log to create trade_state column in daily_balance.  No longer need to manually set trade_state**  
-**12-20-2019: Add capability to merge like trades (all buys or all sells) that occur on same day (see merge-trades example)**  
-**12-13-2019: Add calendar columns to a dataframe (see sell-in-may-and-go-away example)**  
-**11-12-2019: Add prettier_graphs (see double-7s example)**  
-**11-01-2019: Add monthly and holding_period tables (see buy-and-hold example)**  
-**10-18-2019: Add capability to maintain a certain value, shares, or percent in a security (see percent-allocate example)**  
-**07-31-2019: First major update since original release - Add scale-in and scale-out capability**
+**07-27-2020: Add momentum-dmsr example**  
+**07-20-2020: Add momentum-pem example - shows how to include indicators in a portfolio**  
+**07-20-2020: Add Momentum Indicator**  
+**07-16-2020: Add Margin (leverage) cabability**  
+**07-16-2020: Add "performance per symbol" and correlation map cababilities**  
+**06-23-2020: Add ability to have long and short position in same security simultaneously**  
+**06-22-2020: Add Shorting cabability, i.e. (see short-sell example; portfolio example)**   
+**06-13-2020: Add Portfolio cabability, i.e. multiple stocks at the same time**     
 
 A backtester and spreadsheet library for security analysis.
 
@@ -25,6 +22,9 @@ Some of the key features of pinkfish:
  - uses daily data (vs minute or tick data) for intraday trading
  - uses free daily data from yahoo finance
  - simple to use python API
+ - backtest single stock/ETF strategy or a portolio (basket of stocks/ETFs)
+ - backtest short selling strategies and simulate trading with margin
+ - write optimizers to select the best parameters
  - create spreadsheets within Jupyter Notebook by utilizing pandas dataframes and itable formatting
 
 ## Installation
@@ -32,5 +32,7 @@ Follow the installation instructions located at:
 https://fja05680.github.io/pinkfish/
 
 ## Examples
- - [spreadsheet](https://fja05680.github.io/pinkfish/examples/spreadsheet.html) - make a read only spreadsheet within ipython
- - [golden-cross](http://fja05680.github.io/pinkfish/examples/golden-cross.html) - an example illustrating the classic long term trading algorithm
+ - [buy-and-hold](https://fja05680.github.io/pinkfish/examples/buy-and-hold.html) - basic buy and hold strategy
+ - [golden-cross](http://fja05680.github.io/pinkfish/examples/golden-cross.html) - classic long term trading algorithm
+ - [spreadsheet](https://fja05680.github.io/pinkfish/examples/spreadsheet.html) - read only spreadsheet within jupyter notebook
+ - [momentum-gem](http://fja05680.github.io/pinkfish/examples/momentum-gem.html) - Gary Antonacci’s Dual Momentum strategy
